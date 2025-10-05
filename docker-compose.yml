@@ -1,0 +1,96 @@
+version: '3.8'
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.simple
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - DB_HOST=db
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres123
+      - DB_NAME=sales_platform_auth
+      - JWT_SECRET=your-super-secret-jwt-key-change-this-in-production-make-it-very-long-and-secure
+      - SESSION_SECRET=your-super-secret-session-key-change-this-in-production-make-it-very-long-and-secure
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_CALLBACK_URL=http://localhost:3000/auth/google/callback
+      - FRONTEND_URL=http://localhost:3001
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  db:
+    image: postgres:15-alpine
+    ports:
+      - "5433:5432"
+    environment:
+      - POSTGRES_DB=sales_platform_auth
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - app-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  test:
+    build:
+      context: .
+      dockerfile: Dockerfile.test
+    environment:
+      - NODE_ENV=test
+      - DB_HOST=test-db
+      - DB_PORT=5432
+      - DB_USERNAME=postgres
+      - DB_PASSWORD=postgres123
+      - DB_NAME=sales_platform_auth_test
+      - JWT_SECRET=test-secret-key
+      - SESSION_SECRET=test-session-secret
+    depends_on:
+      test-db:
+        condition: service_healthy
+    networks:
+      - test-network
+    command: npm run test:e2e
+    volumes:
+      - ./test:/app/test
+      - ./coverage:/app/coverage
+
+  test-db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=sales_platform_auth_test
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres123
+    networks:
+      - test-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    tmpfs:
+      - /var/lib/postgresql/data
+
+volumes:
+  postgres_data:
+
+networks:
+  app-network:
+    driver: bridge
+  test-network:
+    driver: bridge
